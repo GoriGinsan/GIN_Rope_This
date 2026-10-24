@@ -173,6 +173,15 @@ namespace GINRope {
     if(copy==null)throw new InvalidOperationException("Could not copy the selected item's mesh.");
     copy.name="GIN Rope runtime: "+original.name;
     SkinnedMeshRenderer skin=renderer as SkinnedMeshRenderer;
+#if KKS
+    if(skin!=null){
+     // KKS meshes may use the newer variable-length weight format. Refuse
+     // unsupported influences before converting through the four-weight API.
+     var counts=original.GetBonesPerVertex();
+     for(int i=0;i<counts.Length;i++)if(counts[i]>4)
+      throw new ArgumentException("Automatic bones support up to four skin influences per vertex.");
+    }
+#endif
     Vector3[] vertices=original.vertices;
     if(vertices.Length!=original.vertexCount)throw new ArgumentException("The selected mesh has inconsistent vertex data.");
     Vector3[] normals=original.normals;Vector4[] tangents=original.tangents;
@@ -191,7 +200,12 @@ namespace GINRope {
        Matrix4x4 matrix=root.worldToLocalMatrix*bones[i].localToWorldMatrix*bindposes[i];
        matrices[i]=new PoseMatrix{Matrix=matrix,Normal=matrix.inverse.transpose,Valid=true};
       }
-      influences=(int)skin.quality;if(influences==0)influences=(int)QualitySettings.blendWeights;
+      influences=(int)skin.quality;
+#if KKS
+      if(influences==0)influences=(int)QualitySettings.skinWeights;
+#else
+      if(influences==0)influences=(int)QualitySettings.blendWeights;
+#endif
       if(influences!=1&&influences!=2&&influences!=4)influences=4;
      }
     }

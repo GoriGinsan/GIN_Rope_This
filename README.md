@@ -1,25 +1,32 @@
 # GIN Rope This
 
-Turn Studio items into movable ropes in **Koikatsu CharaStudio**.
+Turn Studio items into movable ropes in **Koikatsu (KK)** and **Koikatsu Sunshine (KKS) CharaStudio**.
 
-## [Download GIN Rope This](https://github.com/GoriGinsan/GIN_Rope_This/releases/latest/download/GIN_Rope_This.zip)
+## Download
 
-**Just want to use it? Download the ZIP above. You do not need Git, the source code, or a GitHub account.**
+| Your game | Installation ZIP |
+| --- | --- |
+| **Koikatsu / Koikatsu Party (KK)** | **[Download KK version](https://github.com/GoriGinsan/GIN_Rope_This/releases/latest/download/GIN_Rope_This.zip)** |
+| **Koikatsu Sunshine (KKS)** | **[Download KKS version](https://github.com/GoriGinsan/GIN_Rope_This/releases/latest/download/GIN_Rope_This_KKS.zip)** |
+
+**Choose the ZIP for your game. You do not need Git, the source code, or a GitHub account.** Both packages install `GIN Rope This.dll`, but the DLLs are different. Install only the matching version in each game.
 
 [All releases](https://github.com/GoriGinsan/GIN_Rope_This/releases) · [Build from source](docs/development.md) · [Tested features](docs/testing.md)
 
 ## Requirements
 
-- **Koikatsu CharaStudio** with [BepInEx 5](https://github.com/BepInEx/BepInEx/releases). This build targets Koikatsu, not Koikatsu Sunshine.
-- **KKAPI**, from [Illusion Modding API releases](https://github.com/IllusionMods/IllusionModdingAPI/releases). Choose the Koikatsu / KK download.
-- **ExtensibleSaveFormat**, from [BepisPlugins releases](https://github.com/IllusionMods/BepisPlugins/releases), for scene data.
-- Optional: **NodesConstraints**, from [HSPlugins releases](https://github.com/IllusionMods/HSPlugins/releases), to attach the rope ends to other Studio objects or bones.
+- Your game's **CharaStudio** with [BepInEx 5](https://github.com/BepInEx/BepInEx/releases).
+- **KKAPI** for KK, or **KKSAPI** for KKS, from [Illusion Modding API releases](https://github.com/IllusionMods/IllusionModdingAPI/releases).
+- Your game's **ExtensibleSaveFormat**, from [BepisPlugins releases](https://github.com/IllusionMods/BepisPlugins/releases), for scene data.
+- Optional: your game's **NodesConstraints**, from [HSPlugins releases](https://github.com/IllusionMods/HSPlugins/releases), to attach rope ends to other Studio objects or bones.
+
+Choose **KK** dependency downloads for Koikatsu, or **KKS** downloads for Koikatsu Sunshine. See the [KKS notes](docs/kks.md) for the tested setup.
 
 These dependencies are separate downloads. They are not included in this package.
 
 ## Install
 
-1. Close Studio and download **GIN_Rope_This.zip** using the link above.
+1. Close Studio and download the **KK** or **KKS** installation ZIP from the table above.
 2. Extract it and copy the **BepInEx** folder into the game folder containing **CharaStudio.exe**. Allow the folders to merge.
 3. Start Studio. Open **Option** at the top right, then click **Rope This** in the left-side button group.
 
@@ -68,14 +75,14 @@ After creation, the panel shows length, gravity, damping, bend stiffness, qualit
 
 Rope settings and generated-rig information are saved with the Studio scene. Scene duplication and restoration are supported. Use **Remove rope (restore item; keep handles)** to restore the item while keeping its two Studio handles.
 
-Authored chains need 3–128 usable nodes. Ambiguous, branched, unreadable, or otherwise unsupported geometry can be refused with a message. Koikatsu Sunshine and collision handling are not supported by this release. See the [tested scope and limitations](docs/testing.md).
+Authored chains need 3–128 usable nodes. Ambiguous, branched, unreadable, or otherwise unsupported geometry can be refused with a message. Collision handling is not supported. KKS automatic conversion safely refuses meshes with more than four skin influences per vertex. See the [tested scope and limitations](docs/testing.md).
 
 ## For developers
 
-- [`src/`](src): complete plugin source for version **1.0.0**.
+- [`src/`](src): complete plugin shared KK/KKS source for version **1.1.0**.
 - [`assets/`](assets): button images and the original image generator.
 - [`tests/`](tests): standalone solver and scene-codec tests.
 - [`build.py`](build.py): local build and installation-ZIP creation.
 - [Development guide](docs/development.md): dependencies, build commands, and code map.
 
-Use the large **Download** link for installation. GitHub's **Code → Download ZIP** downloads the development files instead.
+Use the **Download** table for installation. GitHub's **Code → Download ZIP** downloads the development files instead.
