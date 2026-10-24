@@ -7,7 +7,7 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parent
 SOURCES = ["RopeCore.cs", "RopePlugin.cs", "RopeIntegration.cs",
-           "RopeInterface.cs", "RopeSelectionUi.cs", "RopeAutoRig.cs"]
+           "RopeInterface.cs", "RopeSelectionUi.cs", "RopeAutoRig.cs", "RopeMeshSlices.cs"]
 
 
 def run(arguments):
@@ -51,6 +51,14 @@ def main():
     run([compiler, "/nologo", "/utf8output", "/target:exe", "/out:" + str(tests),
          ROOT / "src/RopeCore.cs", ROOT / "tests/RopeCoreTests.cs"])
     run([tests])
+    mesh_tests = binary / "RopeMeshSlicesTests.exe"
+    mesh_arguments = [compiler, "/nologo", "/utf8output", "/target:exe", "/out:" + str(mesh_tests)]
+    if kks:
+        mesh_arguments.append("/define:KKS")
+    run(mesh_arguments + [ROOT / "src/RopeMeshSlices.cs",
+                         ROOT / "tests/UnityMeshTestStubs.cs",
+                         ROOT / "tests/RopeMeshSlicesTests.cs"])
+    run([mesh_tests])
     if args.tests_only:
         return
     game_arg = args.game_dir or os.environ.get("KOIKATSU_SUNSHINE_DIR" if kks else "KOIKATSU_DIR")

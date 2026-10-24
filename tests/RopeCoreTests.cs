@@ -32,7 +32,91 @@ class Tests {
  }
  static void RejectMetadata(Record row,string description){bool rejected=false;try{EncodeOne(row);}catch(FormatException){rejected=true;}Check(rejected,description);}
  static void RejectDecoded(byte[] data,string description){bool rejected=false;try{Codec.Decode(data);}catch(FormatException){rejected=true;}Check(rejected,description);}
+ static double Dot(V3 a,V3 b){return a.X*b.X+a.Y*b.Y+a.Z*b.Z;}
+ static V3 Rotate(V3 value,double x,double y,double z){
+  x*=Math.PI/180;y*=Math.PI/180;z*=Math.PI/180;
+  V3 first=new V3(value.X,value.Y*Math.Cos(x)-value.Z*Math.Sin(x),value.Y*Math.Sin(x)+value.Z*Math.Cos(x));
+  V3 second=new V3(first.X*Math.Cos(y)+first.Z*Math.Sin(y),first.Y,-first.X*Math.Sin(y)+first.Z*Math.Cos(y));
+  return new V3(second.X*Math.Cos(z)-second.Y*Math.Sin(z),second.X*Math.Sin(z)+second.Y*Math.Cos(z),second.Z);
+ }
+ static LongAxis BoxAxis(V3 halfSize,V3 angles,V3 translation,bool reverse){
+  LongAxis fit=new LongAxis();
+  for(int k=0;k<8;k++){int i=reverse?7-k:k;V3 vertex=new V3((i%2==0?-1:1)*halfSize.X,((i/2)%2==0?-1:1)*halfSize.Y,((i/4)%2==0?-1:1)*halfSize.Z);fit.Add(Rotate(vertex,angles.X,angles.Y,angles.Z)+translation);}
+  return fit;
+ }
+ static void RejectAxis(LongAxis fit,string description){bool rejected=false;try{fit.PrincipalDirection();}catch(ArgumentException){rejected=true;}Check(rejected,description);}
  static void Main(){
+  Run("Long axis follows rotated slender geometry in all directions",delegate{
+   V3[] angles=new V3[]{new V3(0,0,0),new V3(90,0,0),new V3(0,0,90),new V3(90,90,0),new V3(12,25,31),new V3(25,40,55),new V3(-37,121,219)};
+   foreach(V3 rotation in angles){
+    V3 expected=Rotate(new V3(0,1,0),rotation.X,rotation.Y,rotation.Z);
+    LongAxis fit=BoxAxis(new V3(0.1,10,0.05),rotation,new V3(0,0,0),false);V3 direction=fit.PrincipalDirection();
+    Check(direction.Finite&&Math.Abs(direction.Length-1)<1e-12,"Long axis is not a finite unit vector");
+    Check(Math.Abs(Dot(direction,expected))>1-1e-11,"Rotated long axis selected the thickness direction");
+    Check(fit.Center.Length<1e-12,"Symmetric mesh center drifted");
+    LongAxis reversed=BoxAxis(new V3(0.1,10,0.05),rotation,new V3(0,0,0),true);
+    Check((direction-reversed.PrincipalDirection()).Length<1e-10,"Vertex ordering changed long-axis orientation");
+   }
+   LongAxis alongZ=BoxAxis(new V3(0.01,0.02,10),new V3(),new V3(),false);Check((alongZ.PrincipalDirection()-new V3(0,0,1)).Length<1e-12,"Pure Z axis was missed");
+   LongAxis alongX=BoxAxis(new V3(10,0.02,0.01),new V3(),new V3(),false);Check((alongX.PrincipalDirection()-new V3(1,0,0)).Length<1e-12,"Pure X axis was missed");
+  });
+  Run("Long axis retains physical scale and tolerates large translations",delegate{
+   V3 angles=new V3(63,-17,28),offset=new V3(999990,-888880,777770),expected=Rotate(new V3(0,1,0),angles.X,angles.Y,angles.Z);
+   // A scaled cylinder-like cloud: scale must affect the fit before rotation.
+   LongAxis fit=BoxAxis(new V3(0.1,10,0.1),angles,offset,false);
+   Check(Math.Abs(Dot(fit.PrincipalDirection(),expected))>1-1e-10,"Translated nonuniformly scaled geometry lost its long axis");Check((fit.Center-offset).Length<1e-8,"Translation corrupted mesh center");
+   LongAxis wide=BoxAxis(new V3(20,1,0.1),angles,offset,false);V3 wideExpected=Rotate(new V3(1,0,0),angles.X,angles.Y,angles.Z);
+   Check(Math.Abs(Dot(wide.PrincipalDirection(),wideExpected))>1-1e-10,"Physical scale was ignored when choosing the long axis");
+   LongAxis far=new LongAxis();far.Add(new V3(1e11,-1e11,1e11));far.Add(new V3(1e11,-1e11,1e11+10));
+   Check((far.PrincipalDirection()-new V3(0,0,1)).Length<1e-12,"Large coordinate cancellation lost a valid axis");Check(Math.Abs(far.Center.Z-(1e11+5))<1e-5,"Large translated center is incorrect");
+   LongAxis extremes=new LongAxis();extremes.Add(new V3(-1e12,0,0));extremes.Add(new V3(1e12,0,0));Check((extremes.PrincipalDirection()-new V3(1,0,0)).Length<1e-12,"Safe maximum coordinates overflowed");
+  });
+  Run("Equal long axes have a deterministic geometric fallback",delegate{
+   LongAxis cube=BoxAxis(new V3(1,1,1),new V3(),new V3(),false);Check((cube.PrincipalDirection()-new V3(0,1,0)).Length<1e-12,"Cube did not prefer Y");
+   LongAxis plane=BoxAxis(new V3(1,0,1),new V3(),new V3(),false);Check((plane.PrincipalDirection()-new V3(1,0,0)).Length<1e-12,"XZ plane did not prefer X");
+   double h=Math.Sqrt(0.5);LongAxis tilted=new LongAxis();tilted.Add(new V3(h,h,0));tilted.Add(new V3(-h,-h,0));tilted.Add(new V3(0,0,1));tilted.Add(new V3(0,0,-1));
+   Check((tilted.PrincipalDirection()-new V3(h,h,0)).Length<1e-10,"Tied tilted eigenspace did not use projected Y");
+   LongAxis near=BoxAxis(new V3(Math.Sqrt(1+5e-9),1,0.1),new V3(),new V3(),false);Check((near.PrincipalDirection()-new V3(0,1,0)).Length<1e-12,"Nearly equal axes did not stay deterministic");
+   LongAxis distinct=BoxAxis(new V3(Math.Sqrt(1+1e-5),1,0.1),new V3(),new V3(),false);Check((distinct.PrincipalDirection()-new V3(1,0,0)).Length<1e-12,"Distinct longer axis was treated as a tie");
+   LongAxis sign=new LongAxis();sign.Add(new V3(-1,1,0));sign.Add(new V3(1,-1,0));Check((sign.PrincipalDirection()-new V3(-h,h,0)).Length<1e-10,"Dominant-component sign tie did not prefer positive Y");
+  });
+  Run("Float mesh precision can use a stable symmetry tolerance",delegate{
+   V3[] rotations=new V3[]{new V3(27,45,17),new V3(90,0,0),new V3(-17,63,29)};
+   foreach(V3 angles in rotations){
+    // Round both the rotation matrix and the translated world vertices to
+    // single precision, then return to the item frame as Unity does.
+    float[,] matrix=new float[3,3];V3[] columns=new V3[]{Rotate(new V3(1,0,0),angles.X,angles.Y,angles.Z),Rotate(new V3(0,1,0),angles.X,angles.Y,angles.Z),Rotate(new V3(0,0,1),angles.X,angles.Y,angles.Z)};
+    for(int k=0;k<3;k++){matrix[0,k]=(float)columns[k].X;matrix[1,k]=(float)columns[k].Y;matrix[2,k]=(float)columns[k].Z;}
+    LongAxis fit=new LongAxis();
+    for(int k=0;k<8;k++){
+     float x=(k%2==0?-1:1)*.05f,y=((k/2)%2==0?-1:1)*.05f,z=((k/4)%2==0?-1:1)*.05f;
+     float worldX=matrix[0,0]*x+matrix[0,1]*y+matrix[0,2]*z+2,worldY=matrix[1,0]*x+matrix[1,1]*y+matrix[1,2]*z+2,worldZ=matrix[2,0]*x+matrix[2,1]*y+matrix[2,2]*z+2;
+     float dx=worldX-2,dy=worldY-2,dz=worldZ-2;
+     fit.Add(new V3(matrix[0,0]*dx+matrix[1,0]*dy+matrix[2,0]*dz,matrix[0,1]*dx+matrix[1,1]*dy+matrix[2,1]*dz,matrix[0,2]*dx+matrix[1,2]*dy+matrix[2,2]*dz));
+    }
+    Check((fit.PrincipalDirection(1e-5)-new V3(0,1,0)).Length<1e-10,"Float rotation round-trip destabilized symmetric mesh direction");
+   }
+   LongAxis slight=BoxAxis(new V3(Math.Sqrt(1+1e-6),1,.1),new V3(),new V3(),false);
+   Check((slight.PrincipalDirection()-new V3(1,0,0)).Length<1e-12,"Default precision changed");
+   Check((slight.PrincipalDirection(1e-5)-new V3(0,1,0)).Length<1e-12,"Explicit float tolerance did not stabilize nearly equal axes");
+   Check((slight.PrincipalDirection(.001)-new V3(0,1,0)).Length<1e-12,"Maximum valid tolerance was rejected");
+   LongAxis diagonal=new LongAxis();diagonal.Add(new V3(-1-1e-6,1,0));diagonal.Add(new V3(1+1e-6,-1,0));
+   V3 stableSign=diagonal.PrincipalDirection(1e-5);Check(stableSign.Y>0&&stableSign.X<0,"Float noise flipped the sign of nearly equal opposite components");
+   V3 preciseSign=diagonal.PrincipalDirection();Check(preciseSign.X>0&&preciseSign.Y<0,"Default sign precision no longer distinguishes separate components");
+   LongAxis distinctSign=new LongAxis();distinctSign.Add(new V3(-1-.001,1,0));distinctSign.Add(new V3(1+.001,-1,0));
+   V3 longerComponent=distinctSign.PrincipalDirection(1e-5);Check(longerComponent.X>0&&longerComponent.Y<0,"Clearly dominant component did not determine a positive sign");
+   double[] invalid=new double[]{0,-1,Double.NaN,Double.PositiveInfinity,Double.NegativeInfinity,.0010001};
+   foreach(double tolerance in invalid){bool rejected=false;try{slight.PrincipalDirection(tolerance);}catch(ArgumentException){rejected=true;}Check(rejected,"Unsafe axis tolerance accepted");}
+  });
+  Run("Unusable mesh points fail safely without poisoning the fit",delegate{
+   LongAxis fit=new LongAxis();RejectAxis(fit,"Empty mesh accepted");bool rejected=false;try{V3 unused=fit.Center;}catch(ArgumentException){rejected=true;}Check(rejected,"Empty mesh has a center");
+   fit.Add(new V3(3,4,5));RejectAxis(fit,"Single mesh point accepted");fit.Add(new V3(3,4,5));RejectAxis(fit,"Coincident mesh points accepted");
+   V3[] invalid=new V3[]{new V3(Double.NaN,0,0),new V3(0,Double.PositiveInfinity,0),new V3(0,0,Double.NegativeInfinity),new V3(1e12+1,0,0),new V3(0,-1e12-1,0),new V3(Double.MaxValue,0,0)};
+   foreach(V3 point in invalid){rejected=false;try{fit.Add(point);}catch(ArgumentException){rejected=true;}Check(rejected,"Unsafe mesh point accepted");Check((fit.Center-new V3(3,4,5)).Length==0,"Rejected point changed accumulated geometry");}
+   fit.Add(new V3(3,8,5));Check((fit.PrincipalDirection()-new V3(0,1,0)).Length<1e-12,"Rejected points poisoned subsequent valid geometry");
+   LongAxis tiny=new LongAxis();tiny.Add(new V3(0,0,0));tiny.Add(new V3(1e-12,0,0));RejectAxis(tiny,"Numerically unusable tiny mesh accepted");
+   LongAxis pair=new LongAxis();pair.Add(new V3(0,0,0));pair.Add(new V3(3,4,0));Check((pair.PrincipalDirection()-new V3(0.6,0.8,0)).Length<1e-12,"Two distinct mesh points did not produce their line");
+  });
   Run("Pinned ends and sag",delegate{
    Solver rope=Make(17,0.125);Settings s=new Settings();V3 a=new V3(0,0,0),b=new V3(1,0,0);rope.Reset(a,b,s);
    for(int k=0;k<2400;k++)rope.Step(1.0/120,a,b,s);

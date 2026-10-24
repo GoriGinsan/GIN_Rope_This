@@ -12,6 +12,58 @@ namespace GINRope {
   public bool Finite {get{return !double.IsNaN(X)&&!double.IsInfinity(X)&&!double.IsNaN(Y)&&!double.IsInfinity(Y)&&!double.IsNaN(Z)&&!double.IsInfinity(Z);}}
   public static V3 Lerp(V3 a,V3 b,double t){return a*(1-t)+b*t;}
  }
+ // Fit mesh points in physical units, independent of their translation and orientation.
+ public sealed class LongAxis {
+  int count;
+  V3 mean;
+  double xx,xy,xz,yy,yz,zz;
+  public V3 Center {get{if(count==0)throw new ArgumentException("No mesh points.");return mean;}}
+  public void Add(V3 point){
+   if(!point.Finite||Math.Abs(point.X)>1e12||Math.Abs(point.Y)>1e12||Math.Abs(point.Z)>1e12)throw new ArgumentException("Invalid mesh point.");
+   if(count==Int32.MaxValue)throw new ArgumentException("Too many mesh points.");
+   // Welford's centered sum avoids subtracting large, nearly equal squared coordinates.
+   V3 delta=point-mean;count++;mean=mean+delta*(1.0/count);V3 remaining=point-mean;
+   xx+=delta.X*remaining.X;xy+=delta.X*remaining.Y;xz+=delta.X*remaining.Z;
+   yy+=delta.Y*remaining.Y;yz+=delta.Y*remaining.Z;zz+=delta.Z*remaining.Z;
+  }
+  public V3 PrincipalDirection(){return PrincipalDirection(1e-8);}
+  public V3 PrincipalDirection(double relativeTolerance){
+   if(!Settings.Finite(relativeTolerance)||relativeTolerance<=0||relativeTolerance>.001)throw new ArgumentException("Invalid mesh-axis tolerance.");
+   double scale=Math.Max(xx,Math.Max(yy,zz));
+   if(count<2||!Settings.Finite(scale)||scale/count<=1e-20)throw new ArgumentException("Mesh points have no usable length.");
+   double[,] a=new double[3,3]{{xx/scale,xy/scale,xz/scale},{xy/scale,yy/scale,yz/scale},{xz/scale,yz/scale,zz/scale}};
+   double[,] basis=new double[3,3]{{1,0,0},{0,1,0},{0,0,1}};
+   // A full symmetric eigensolver also finds axes orthogonal to an initial guess.
+   for(int pass=0;pass<32;pass++){
+    int p=0,q=1;double off=Math.Abs(a[0,1]);
+    if(Math.Abs(a[0,2])>off){p=0;q=2;off=Math.Abs(a[0,2]);}
+    if(Math.Abs(a[1,2])>off){p=1;q=2;off=Math.Abs(a[1,2]);}
+    if(off<=1e-14)break;
+    double angle=0.5*Math.Atan2(2*a[p,q],a[q,q]-a[p,p]),c=Math.Cos(angle),s=Math.Sin(angle);
+    double pp=a[p,p],qq=a[q,q],pq=a[p,q];
+    a[p,p]=c*c*pp-2*c*s*pq+s*s*qq;a[q,q]=s*s*pp+2*c*s*pq+c*c*qq;a[p,q]=a[q,p]=0;
+    for(int k=0;k<3;k++){
+     if(k!=p&&k!=q){double kp=a[k,p],kq=a[k,q];a[k,p]=a[p,k]=c*kp-s*kq;a[k,q]=a[q,k]=s*kp+c*kq;}
+     double vp=basis[k,p],vq=basis[k,q];basis[k,p]=c*vp-s*vq;basis[k,q]=s*vp+c*vq;
+    }
+   }
+   double largest=Math.Max(a[0,0],Math.Max(a[1,1],a[2,2])),tolerance=largest*relativeTolerance;
+   V3 result=new V3();
+   // Equal longest axes have no unique direction. Project Y, then X, then Z
+   // into that eigenspace, so a cube and other symmetric meshes stay deterministic.
+   int[] priority=new int[]{1,0,2};
+   foreach(int axis in priority){
+    result=new V3();
+    for(int k=0;k<3;k++)if(largest-a[k,k]<=tolerance){double component=basis[axis,k];result=result+new V3(basis[0,k],basis[1,k],basis[2,k])*component;}
+    if(result.Length>1e-6)break;
+   }
+   double length=result.Length;if(!result.Finite||length<=1e-6)throw new ArgumentException("Mesh axis could not be determined.");result=result*(1/length);
+   double dominant=result.Y,absolute=Math.Abs(dominant),signTolerance=Math.Max(Math.Abs(result.X),Math.Max(absolute,Math.Abs(result.Z)))*relativeTolerance;
+   if(Math.Abs(result.X)>absolute+signTolerance){dominant=result.X;absolute=Math.Abs(dominant);}
+   if(Math.Abs(result.Z)>absolute+signTolerance)dominant=result.Z;
+   return dominant<0?result*(-1):result;
+  }
+ }
  public sealed class Settings {
   public double Length=1, Gravity=9.81, Damping=4, Bend=0;
   public int Iterations=24;

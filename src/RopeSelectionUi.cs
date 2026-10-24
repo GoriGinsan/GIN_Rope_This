@@ -59,8 +59,8 @@ namespace GINRope {
    if(autoRigCandidate){
     GUILayout.Label("Intermediate bones: "+autoRigIntermediate);
     autoRigIntermediate=Mathf.Clamp(Mathf.RoundToInt(GUILayout.HorizontalSlider(autoRigIntermediate,3,30)),3,30);
-    if(GUILayout.Button("Rope This(Vertical)"))CreateAutoRig(true);
-    if(choosing!=null&&GUILayout.Button("Rope This(Horizontal)"))CreateAutoRig(false);
+    GUILayout.Label("Direction: automatic (along the item's length)");
+    if(GUILayout.Button("Rope This"))CreateAutoRig();
     return;
    }
    if(GUILayout.Button("A: "+(selectedA==null?"choose in Option":selectedA.name),leftBoneButton))manualBoneEndpoint=0;

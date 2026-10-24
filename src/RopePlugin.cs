@@ -12,7 +12,7 @@ using UnityEngine;
 using UnityEngine.UI;
 using UObj=UnityEngine.Object;
 namespace GINRope {
- [BepInPlugin(Guid,"GIN Rope This","1.1.0")]
+ [BepInPlugin(Guid,"GIN Rope This","1.1.2")]
  [BepInProcess("CharaStudio")]
  [BepInDependency(KKAPI.KoikatuAPI.GUID,BepInDependency.DependencyFlags.HardDependency)]
  [BepInDependency("com.joan6694.illusionplugins.nodesconstraints",BepInDependency.DependencyFlags.SoftDependency)]
@@ -50,9 +50,9 @@ namespace GINRope {
    Camera.onPreCull+=BeforeCamera;
    Timeline=new TimelineBridge();Constraints=new ConstraintBridge();
 #if KKS
-   Logger.LogInfo("GIN Rope This 1.1.0 loaded (KKS).");
+   Logger.LogInfo("GIN Rope This 1.1.2 loaded (KKS).");
 #else
-   Logger.LogInfo("GIN Rope This 1.1.0 loaded (KK).");
+   Logger.LogInfo("GIN Rope This 1.1.2 loaded (KK).");
 #endif
   }
   void Start(){StartCoroutine(AddToolbar());}
@@ -129,7 +129,7 @@ namespace GINRope {
     foreach(Transform bone in mesh.bones)
      if(bone!=null&&bone.IsChildOf(choosing.objectItem.transform)&&unique.Add(bone))candidates.Add(bone);
    candidates.Sort(delegate(Transform a,Transform b){return String.Compare(PathOf(choosing.objectItem.transform,a),PathOf(choosing.objectItem.transform,b),StringComparison.Ordinal);});
-   if(candidates.Count<=1||choosing.listBones==null||choosing.listBones.Count<=1){autoRigCandidate=true;status="Generate a straight rope along the item.";return;}
+   if(candidates.Count<=1||choosing.listBones==null||choosing.listBones.Count<=1){autoRigCandidate=true;status="Generate a rope along the item's length automatically.";return;}
    if(candidates.Count<3){choosing=null;status="Needs at least 3 chain nodes, or an item without an FK chain.";return;}
    SuggestEndpoints();
   }
@@ -162,17 +162,17 @@ namespace GINRope {
     status=ex.Message;Logger.LogWarning(ex);
    }
   }
-  void CreateAutoRig(bool vertical){
+  void CreateAutoRig(){
    AutoRig rig=null;OCIFolder a=null,b=null;
    try{
     if(choosing==null||!autoRigCandidate)throw new InvalidOperationException("Select an item without an FK chain first.");
     ValidateItem(choosing);
     if(Ropes.Count>=256)throw new InvalidOperationException("The scene already has 256 ropes.");
     foreach(Rope current in Ropes)if(current.Item==choosing)throw new InvalidOperationException("This item is already controlled.");
-    rig=AutoRig.Build(choosing,vertical,autoRigIntermediate);
+    rig=AutoRig.Build(choosing,autoRigIntermediate);
     a=NewHandle(choosing,"GIN Rope A",rig.Bones[0].position);
     b=NewHandle(choosing,"GIN Rope B",rig.Bones[rig.Bones.Length-1].position);
-    Rope created=new Rope(choosing,rig.Bones,a,b,null,null);created.AutoRig=rig;
+    Rope created=new Rope(choosing,rig.Bones,a,b,null,null,rig);
     active=created;Ropes.Add(created);choosing=null;autoRigCandidate=false;
     status="Ready. Use NodesConstraints or move GIN Rope A/B directly.";
    }catch(Exception ex){if(rig!=null)rig.Restore();DeleteNewHandle(a);DeleteNewHandle(b);Message("Could not generate rope: "+ex.Message);}
@@ -213,6 +213,9 @@ namespace GINRope {
    if(!Settings.Finite(norm)||norm<0.000000000001||norm>1000000)throw new ArgumentException("Invalid bone rotation.");
   }
   public static void ValidateChain(OCIItem item,Transform[] bones){
+   ValidateChain(item,bones,null);
+  }
+  internal static void ValidateChain(OCIItem item,Transform[] bones,AutoRig generated){
    ValidateItem(item);
    if(bones==null||bones.Length<3||bones.Length>128)throw new ArgumentException("Choose a chain of 3 to 128 nodes.");
    Transform root=item.objectItem.transform;CheckVector(root.position,"Item");CheckScale(root.lossyScale);
@@ -220,7 +223,10 @@ namespace GINRope {
    if(actual.Length!=bones.Length)throw new ArgumentException("Saved bone chain no longer matches the item.");
    HashSet<Transform> skin=new HashSet<Transform>();
    foreach(SkinnedMeshRenderer mesh in item.objectItem.GetComponentsInChildren<SkinnedMeshRenderer>(true))foreach(Transform bone in mesh.bones)if(bone!=null)skin.Add(bone);
-   if(!skin.Contains(bones[0])||!skin.Contains(bones[bones.Length-1]))throw new ArgumentException("Both endpoints must be skin bones of the selected item.");
+   // An owned automatic chain drives separate rendering frames. Authored
+   // chains still require genuine skin endpoints; automatic ownership is exact.
+   if(generated!=null){if(!generated.Owns(item,bones))throw new ArgumentException("The generated chain does not belong to this item.");}
+   else if(!skin.Contains(bones[0])||!skin.Contains(bones[bones.Length-1]))throw new ArgumentException("Both endpoints must be skin bones of the selected item.");
    for(int i=0;i<bones.Length;i++){
     if(bones[i]==null||bones[i]!=actual[i]||!bones[i].IsChildOf(root))throw new ArgumentException("Bones must belong to the selected item's chain.");
     CheckVector(bones[i].position,"Bone");CheckScale(bones[i].lossyScale);CheckRotation(bones[i].rotation);
@@ -287,13 +293,13 @@ namespace GINRope {
       generated=AutoRig.Build(item,p.Record.AutoRigVertical,p.Record.AutoRigIntermediate,new Vector3(start[0],start[1],start[2]),new Vector3(end[0],end[1],end[2]),p.Record.AutoRigSources);bones=generated.Bones;
      }else for(int j=0;j<bones.Length;j++){bones[j]=Resolve(item.objectItem.transform,p.Record.Paths[j]);if(bones[j]==null)valid=false;}
      if(!valid){Message("Skipped rope: saved bones no longer exist.");continue;}
-     ValidateChain(item,bones);Rope.ValidatePoses(p.Record.Poses,bones.Length);p.Record.Settings.Validate();
+     ValidateChain(item,bones,generated);Rope.ValidatePoses(p.Record.Poses,bones.Length);p.Record.Settings.Validate();
      if(Ropes.Count>=256)throw new InvalidOperationException("The scene already has 256 ropes.");
      ObjectCtrlInfo foundA,foundB;p.Objects.TryGetValue(p.Record.A,out foundA);p.Objects.TryGetValue(p.Record.B,out foundB);
      OCIFolder a=foundA as OCIFolder,b=foundB as OCIFolder;
      if(a==null)a=newA=NewHandle(item,"GIN Rope A",bones[0].position);
      if(b==null)b=newB=NewHandle(item,"GIN Rope B",bones[bones.Length-1].position);
-     Rope restored=new Rope(item,bones,a,b,p.Record.Poses,p.Record.Settings.Copy());restored.AutoRig=generated;restored.TimelineSync=p.Record.TimelineSync;restored.UseBake=p.Record.UseBake;restored.Bake=p.Record.Bake;
+     Rope restored=new Rope(item,bones,a,b,p.Record.Poses,p.Record.Settings.Copy(),generated);restored.TimelineSync=p.Record.TimelineSync;restored.UseBake=p.Record.UseBake;restored.Bake=p.Record.Bake;
      if(restored.Bake!=null)restored.BakePreviewTime=restored.Bake.Start;Ropes.Add(restored);
     }catch(Exception ex){if(generated!=null)generated.Restore();DeleteNewHandle(newA);DeleteNewHandle(newB);Logger.LogError(ex);status="Could not restore one rope: "+ex.Message;}
    }
@@ -336,8 +342,9 @@ namespace GINRope {
   }}
   static V3 V(Vector3 v){return new V3(v.x,v.y,v.z);}
   static Vector3 U(V3 v){return new Vector3((float)v.X,(float)v.Y,(float)v.Z);}
-  public Rope(OCIItem item,Transform[] bones,OCIFolder a,OCIFolder b,float[][] poses,Settings settings){
-   Plugin.ValidateChain(item,bones);
+  public Rope(OCIItem item,Transform[] bones,OCIFolder a,OCIFolder b,float[][] poses,Settings settings):this(item,bones,a,b,poses,settings,null){}
+  public Rope(OCIItem item,Transform[] bones,OCIFolder a,OCIFolder b,float[][] poses,Settings settings,AutoRig generated){
+   Plugin.ValidateChain(item,bones,generated);AutoRig=generated;
    if(a==null||b==null||a.objectItem==null||b.objectItem==null)throw new ArgumentException("Both Studio handles are required.");
    Item=item;Bones=bones;A=a;B=b;Settings=settings??new Settings();Settings.Validate();
    float[][] before=Capture(bones);original=poses??before;ValidatePoses(original,bones.Length);

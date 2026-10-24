@@ -2,6 +2,8 @@
 
 Turn Studio items into movable ropes in **Koikatsu (KK)** and **Koikatsu Sunshine (KKS) CharaStudio**.
 
+**Version 1.1.2** adds automatic length-direction detection and fixes bending for sparse meshes, including cylinders stretched along different axes before conversion.
+
 ## Download
 
 | Your game | Installation ZIP |
@@ -58,16 +60,13 @@ The plugin suggests endpoints only when it finds an unambiguous supported chain.
 
 ## Add bones to an item
 
-For an item without an FK chain, or with only one bone, the panel offers:
-
-- **Rope This(Vertical)**: a straight chain from the highest to the lowest world-space vertex on the Y axis.
-- **Rope This(Horizontal)**: a straight chain from the highest to the lowest world-space vertex on the X axis.
+For an item without an FK chain, or with only one bone, click **Rope This**. The plugin automatically finds the principal length direction of the displayed mesh and places a straight chain along it. Item rotation, including depth and diagonal directions, and the current scale are included. You do not need to select Vertical or Horizontal.
 
 Use **Intermediate bones** to choose **3–30** middle points. The default is **10**, plus the two endpoints: **12 bones in total**.
 
-The plugin creates a private mesh copy and weights it to the generated chain. Removing the rope restores the original item. Smooth bending depends on the original mesh's vertex density; this feature does not subdivide the mesh.
+The plugin creates a private mesh copy and weights it to the generated chain. Long triangles are split along the chain so sparse meshes, including cylinders stretched along X, Y, or Z before conversion, can follow bends. Materials, UVs, colors, and the original surface are retained; new vertex attributes are interpolated. Removing the rope restores the original item.
 
-![Automatic bone generation controls](docs/images/automatic-controls.png)
+The direction is fitted when the rope is created. Saved ropes retain their existing local endpoints, including ropes made with the older Vertical/Horizontal buttons.
 
 ## Adjust, save, or remove
 
@@ -79,9 +78,9 @@ Authored chains need 3–128 usable nodes. Ambiguous, branched, unreadable, or o
 
 ## For developers
 
-- [`src/`](src): complete plugin shared KK/KKS source for version **1.1.0**.
+- [`src/`](src): complete shared KK/KKS plugin source for **1.1.2**.
 - [`assets/`](assets): button images and the original image generator.
-- [`tests/`](tests): standalone solver and scene-codec tests.
+- [`tests/`](tests): standalone solver, scene-codec, and mesh-subdivision tests.
 - [`build.py`](build.py): local build and installation-ZIP creation.
 - [Development guide](docs/development.md): dependencies, build commands, and code map.
 

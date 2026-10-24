@@ -10,6 +10,7 @@ namespace GINRope {
   public const string RootName="__GIN_Rope_AutoRig";
   const int MaxVertices=500000,MaxRenderers=64;
   public readonly Transform[] Bones;
+  // Legacy axis hint. Saved local endpoints define the actual rest line.
   public readonly bool Vertical;
   public readonly int Intermediate;
   // Item-local rest endpoints, independent of the current simulated pose.
@@ -21,6 +22,9 @@ namespace GINRope {
   readonly List<Suppressed> suppressed=new List<Suppressed>();
   readonly bool exactSources;
   readonly Vector3[] restPoints;
+  readonly Transform[] skinFrames;
+  readonly float[] skinSamples;
+  readonly Quaternion[] nodeFrames;
   readonly Matrix4x4[] correctedBindposes;
   readonly Renderer[] originalRendererArray;
   Renderer[] installedRendererArray;
@@ -40,9 +44,35 @@ namespace GINRope {
    owner=item;itemRoot=item.objectItem.transform;originalRendererArray=item.arrayRender;
    Vertical=vertical;Intermediate=intermediate;Start=start;End=end;exactSources=savedSources;
    Bones=new Transform[intermediate+2];sources=prepared;
-   restPoints=new Vector3[Bones.Length];correctedBindposes=new Matrix4x4[Bones.Length];
-   for(int i=0;i<Bones.Length;i++)restPoints[i]=Vector3.Lerp(start,end,(float)i/(Bones.Length-1));
+   skinSamples=SkinSamples(itemRoot.TransformPoint(start),itemRoot.TransformPoint(end),prepared,(Bones.Length-1)*4);
+   skinFrames=new Transform[skinSamples.Length];nodeFrames=new Quaternion[Bones.Length];
+   restPoints=new Vector3[skinFrames.Length];correctedBindposes=new Matrix4x4[skinFrames.Length];
+   for(int i=0;i<skinFrames.Length;i++)restPoints[i]=Vector3.Lerp(start,end,skinSamples[i]);
    SourcePaths=new string[prepared.Count];for(int i=0;i<prepared.Count;i++)SourcePaths[i]=prepared[i].Key;
+  }
+  static float[] SkinSamples(Vector3 start,Vector3 end,List<Source> prepared,int segments){
+   Vector3 axis=end-start;float square=axis.sqrMagnitude;
+   SortedDictionary<int,float> samples=new SortedDictionary<int,float>();samples.Add(0,0);samples.Add(1000000,1);
+   foreach(Source source in prepared)foreach(Vector3 point in source.World){
+    float t=Mathf.Clamp01(Vector3.Dot(point-start,axis)/square);int key=Mathf.RoundToInt(t*1000000);
+    if(!samples.ContainsKey(key))samples.Add(key,t);
+    if(samples.Count>128){
+     // Arbitrary dense meshes use a bounded grid; ordinary cylinders retain
+     // their actual cross-section stations as well as every added slice.
+     float[] grid=new float[segments+1];for(int i=0;i<grid.Length;i++)grid[i]=(float)i/segments;return grid;
+    }
+   }
+   float[] result=new float[samples.Count];samples.Values.CopyTo(result,0);return result;
+  }
+  int NearestSkinSample(float t){
+   int index=Array.BinarySearch<float>(skinSamples,t);if(index>=0)return index;
+   index=~index;if(index==0)return 0;if(index>=skinSamples.Length)return skinSamples.Length-1;
+   return t-skinSamples[index-1]<=skinSamples[index]-t?index-1:index;
+  }
+  internal bool Owns(OCIItem item,Transform[] chain){
+   if(restored||item!=owner||!System.Object.ReferenceEquals(chain,Bones)||generatedRoot==null||generatedRoot.transform.parent!=itemRoot)return false;
+   foreach(Transform bone in chain)if(bone==null||!bone.IsChildOf(generatedRoot.transform))return false;
+   return true;
   }
   public static bool Eligible(OCIItem item){
    if(item==null||item.objectItem==null)return false;
@@ -69,16 +99,19 @@ namespace GINRope {
   static void AddWeightedBone(HashSet<Transform> set,Transform[] bones,int index,float weight){
    if(weight>0&&bones!=null&&index>=0&&index<bones.Length&&bones[index]!=null)set.Add(bones[index]);
   }
+  public static AutoRig Build(OCIItem item,int intermediates){
+   return BuildInternal(item,false,intermediates,false,Vector3.zero,Vector3.zero,null,true);
+  }
   public static AutoRig Build(OCIItem item,bool vertical,int intermediates){
-   return BuildInternal(item,vertical,intermediates,false,Vector3.zero,Vector3.zero,null);
+   return BuildInternal(item,vertical,intermediates,false,Vector3.zero,Vector3.zero,null,false);
   }
   public static AutoRig Build(OCIItem item,bool vertical,int intermediates,Vector3 localStart,Vector3 localEnd){
-   return BuildInternal(item,vertical,intermediates,true,localStart,localEnd,null);
+   return BuildInternal(item,vertical,intermediates,true,localStart,localEnd,null,false);
   }
   public static AutoRig Build(OCIItem item,bool vertical,int intermediates,Vector3 localStart,Vector3 localEnd,string[] sourcePaths){
-   return BuildInternal(item,vertical,intermediates,true,localStart,localEnd,sourcePaths);
+   return BuildInternal(item,vertical,intermediates,true,localStart,localEnd,sourcePaths,false);
   }
-  static AutoRig BuildInternal(OCIItem item,bool vertical,int intermediates,bool savedLine,Vector3 localStart,Vector3 localEnd,string[] sourcePaths){
+  static AutoRig BuildInternal(OCIItem item,bool vertical,int intermediates,bool savedLine,Vector3 localStart,Vector3 localEnd,string[] sourcePaths,bool automatic){
    Plugin.ValidateItem(item);
    if(!Eligible(item))throw new ArgumentException("Automatic bones require an item with no FK bones or one FK bone.");
    if(intermediates<3||intermediates>30)throw new ArgumentException("Choose 3 to 30 intermediate bones.");
@@ -129,6 +162,9 @@ namespace GINRope {
     if(savedLine){
      Plugin.CheckVector(localStart,"Saved automatic start");Plugin.CheckVector(localEnd,"Saved automatic end");
      start=root.TransformPoint(localStart);end=root.TransformPoint(localEnd);
+    }else if(automatic){
+     FindLongitudinalLine(root,prepared,out start,out end);
+     localStart=root.InverseTransformPoint(start);localEnd=root.InverseTransformPoint(end);
     }else{
      Vector3 center=(min+max)*.5f;
      start=center;end=center;
@@ -138,7 +174,16 @@ namespace GINRope {
     Plugin.CheckVector(start,"Automatic start");Plugin.CheckVector(end,"Automatic end");
     Plugin.CheckVector(localStart,"Automatic local start");Plugin.CheckVector(localEnd,"Automatic local end");
     float length=(end-start).magnitude;
-    if(!Settings.Finite(length)||length<.000011f*(intermediates+1))throw new ArgumentException("The item has no usable length on the selected axis.");
+    if(!Settings.Finite(length)||length<.000011f*(intermediates+1))throw new ArgumentException("The item has no usable length for automatic bones.");
+    // A sparse cylinder can have only end rings along the selected axis.
+    // Split its private surface before weighting so faces follow the chain
+    // instead of bridging bends. Source assets remain untouched for removal.
+    foreach(Source source in prepared){
+     int previous=source.World.Length;
+     int limit=MaxVertices-(total-previous);
+     source.World=LongitudinalMesh.Subdivide(source.Mesh,source.World,start,end,(intermediates+1)*4,limit);
+     total+=source.World.Length-previous;
+    }
     rig=new AutoRig(item,vertical,intermediates,localStart,localEnd,prepared,allowed!=null);
     // Every mesh, axis and coordinate has been checked before touching a
     // source renderer. Any later failure also restores all source states.
@@ -148,6 +193,32 @@ namespace GINRope {
     if(rig!=null)rig.Restore();else foreach(Source source in prepared)if(source.Mesh!=null)UObj.Destroy(source.Mesh);
     throw;
    }
+  }
+  static void FindLongitudinalLine(Transform root,List<Source> prepared,out Vector3 start,out Vector3 end){
+   // Remove only the item's rigid rotation, retaining the displayed scale and
+   // posed geometry. This makes the fitted line follow arbitrary item rotation.
+   Vector3 origin=root.position;Quaternion rotation=root.rotation,inverse=Quaternion.Inverse(rotation);
+   LongAxis fit=new LongAxis();
+   foreach(Source source in prepared)foreach(Vector3 point in source.World){
+    Vector3 frame=inverse*(point-origin);fit.Add(new V3(frame.x,frame.y,frame.z));
+   }
+   // Unity vertices and transforms are floats. Treat nearly equal dimensions
+   // as a tie so round-trip rotation noise cannot spin a symmetric item's rig.
+   V3 principal=fit.PrincipalDirection(1e-5);
+   Vector3 axis=new Vector3((float)principal.X,(float)principal.Y,(float)principal.Z);
+   Vector3 reference=Math.Abs(axis.y)<.9f?Vector3.up:Vector3.right;
+   Vector3 side=Vector3.Cross(axis,reference).normalized,other=Vector3.Cross(axis,side).normalized;
+   V3 average=fit.Center;Vector3 center=new Vector3((float)average.X,(float)average.Y,(float)average.Z);
+   Vector3 min=Vector3.one*Single.PositiveInfinity,max=Vector3.one*Single.NegativeInfinity;
+   foreach(Source source in prepared)foreach(Vector3 point in source.World){
+    Vector3 delta=inverse*(point-origin)-center;
+    Vector3 projection=new Vector3(Vector3.Dot(delta,axis),Vector3.Dot(delta,side),Vector3.Dot(delta,other));
+    min=Vector3.Min(min,projection);max=Vector3.Max(max,projection);
+   }
+   // Transverse bounds, rather than vertex density, determine the line's center.
+   center+=side*((min.y+max.y)*.5f)+other*((min.z+max.z)*.5f);
+   start=origin+rotation*(center+axis*max.x);
+   end=origin+rotation*(center+axis*min.x);
   }
   static HashSet<Transform> ForeignItemRoots(OCIItem owner){
    HashSet<Transform> roots=new HashSet<Transform>();
@@ -293,6 +364,13 @@ namespace GINRope {
     Bones[i]=node.transform;Bones[i].SetParent(parent,false);Bones[i].position=Vector3.Lerp(start,end,(float)i/(Bones.Length-1));
     Bones[i].localRotation=Quaternion.identity;Bones[i].localScale=Vector3.one;parent=Bones[i];
    }
+   // Rendering frames sample the physics chain without adding simulated nodes.
+   // Rigid per-frame weights avoid the volume collapse of blended rotations.
+   for(int i=0;i<skinFrames.Length;i++){
+    Transform frame=new GameObject("SkinFrame"+i.ToString("000")).transform;frame.gameObject.layer=itemRoot.gameObject.layer;
+    frame.SetParent(generatedRoot.transform,false);frame.position=Vector3.Lerp(start,end,skinSamples[i]);
+    frame.localRotation=Quaternion.identity;frame.localScale=Vector3.one;skinFrames[i]=frame;
+   }
    Vector3 axis=end-start;float square=axis.sqrMagnitude;
    Vector3 localAxis=End-Start;float localSquare=localAxis.sqrMagnitude,localSpacing=localAxis.magnitude/(Bones.Length-1);
    foreach(Source source in sources){
@@ -301,20 +379,18 @@ namespace GINRope {
     SkinnedMeshRenderer target=obj.AddComponent<SkinnedMeshRenderer>();source.Generated=target;
     BoneWeight[] weights=new BoneWeight[source.World.Length];
     for(int i=0;i<weights.Length;i++){
-     float t=Mathf.Clamp01(Vector3.Dot(source.World[i]-start,axis)/square)*(Bones.Length-1);
+     float t=Mathf.Clamp01(Vector3.Dot(source.World[i]-start,axis)/square);
      Vector3 localVertex=itemRoot.InverseTransformPoint(source.World[i]);
      float projection=Mathf.Clamp01(Vector3.Dot(localVertex-Start,localAxis)/localSquare);
      float offset=(localVertex-(Start+localAxis*projection)).magnitude;
      boundsPadding=Mathf.Max(boundsPadding,offset+localSpacing);
-     int first=Mathf.Min((int)t,Bones.Length-1),second=Mathf.Min(first+1,Bones.Length-1);float fraction=t-first;
-     weights[i].boneIndex0=first;weights[i].weight0=first==second?1:1-fraction;
-     weights[i].boneIndex1=second;weights[i].weight1=first==second?0:fraction;
+     weights[i].boneIndex0=NearestSkinSample(t);weights[i].weight0=1;
     }
     source.World=null;
-    Matrix4x4[] bindposes=new Matrix4x4[Bones.Length];
-    for(int i=0;i<Bones.Length;i++)bindposes[i]=Bones[i].worldToLocalMatrix*obj.transform.localToWorldMatrix;
+    Matrix4x4[] bindposes=new Matrix4x4[skinFrames.Length];
+    for(int i=0;i<skinFrames.Length;i++)bindposes[i]=skinFrames[i].worldToLocalMatrix*obj.transform.localToWorldMatrix;
     source.Mesh.boneWeights=weights;source.Mesh.bindposes=bindposes;
-    target.sharedMesh=source.Mesh;target.bones=Bones;target.rootBone=Bones[0];target.quality=SkinQuality.Bone2;
+    target.sharedMesh=source.Mesh;target.bones=skinFrames;target.rootBone=skinFrames[0];target.quality=SkinQuality.Bone1;
     CopyRendererSettings(source.Original,target);target.enabled=source.Enabled&&owner.visible;
     boundsPadding=Mathf.Max(boundsPadding,source.Mesh.bounds.extents.magnitude);
    }
@@ -385,13 +461,35 @@ namespace GINRope {
    // the rope bends. Cancel the inherited matrix and apply a rigid world-space
    // rotation delta to the item's already scaled original geometry instead.
    Matrix4x4 linear=itemRoot.localToWorldMatrix;linear.m03=0;linear.m13=0;linear.m23=0;
-   Quaternion inverseRoot=Quaternion.Inverse(itemRoot.rotation);
+   Vector3 previous=(itemRoot.TransformPoint(End)-itemRoot.TransformPoint(Start)).normalized;
+   Vector3 reference=itemRoot.rotation*Vector3.up;
+   if(Math.Abs(Vector3.Dot(previous,reference))>.9f)reference=itemRoot.rotation*Vector3.right;
+   Vector3 normal=Vector3.Cross(previous,reference).normalized;
+   Quaternion transported=Quaternion.identity;
    for(int i=0;i<Bones.Length;i++){
     if(Bones[i]==null)throw new ArgumentException("An automatic rope bone is missing.");
-    Plugin.CheckScale(Bones[i].lossyScale);Plugin.CheckVector(Bones[i].position,"Automatic bone");Plugin.CheckRotation(Bones[i].rotation);
-    Quaternion delta=Bones[i].rotation*inverseRoot;
-    Matrix4x4 desired=Matrix4x4.TRS(Bones[i].position,delta,Vector3.one)*linear*Matrix4x4.TRS(-restPoints[i],Quaternion.identity,Vector3.one);
-    Matrix4x4 bind=Bones[i].worldToLocalMatrix*desired;
+    Plugin.CheckVector(Bones[i].position,"Automatic bone");
+    Vector3 incoming=i==0?Vector3.zero:(Bones[i].position-Bones[i-1].position).normalized;
+    Vector3 outgoing=i==Bones.Length-1?Vector3.zero:(Bones[i+1].position-Bones[i].position).normalized;
+    Vector3 tangent=incoming+outgoing;
+    if(tangent.sqrMagnitude<1e-10f)tangent=outgoing.sqrMagnitude>1e-10f?outgoing:previous;
+    tangent.Normalize();Quaternion turn;
+    if(Vector3.Dot(previous,tangent)<-.9999f){
+     Quaternion half=Quaternion.AngleAxis(180,transported*normal);
+     turn=Quaternion.FromToRotation(-previous,tangent)*half;
+    }else turn=Quaternion.FromToRotation(previous,tangent);
+    transported=turn*transported;
+    nodeFrames[i]=transported;previous=tangent;
+   }
+   for(int i=0;i<skinFrames.Length;i++){
+    float t=skinSamples[i]*(Bones.Length-1);int first=Math.Min((int)t,Bones.Length-2);float fraction=t-first;
+    Vector3 position=Vector3.Lerp(Bones[first].position,Bones[first+1].position,fraction);
+    Quaternion delta=Quaternion.Slerp(nodeFrames[first],nodeFrames[first+1],fraction);
+    Transform frame=skinFrames[i];if(frame==null)throw new ArgumentException("An automatic skin frame is missing.");
+    frame.position=position;frame.rotation=delta*itemRoot.rotation;
+    Plugin.CheckScale(frame.lossyScale);Plugin.CheckVector(position,"Automatic skin frame");Plugin.CheckRotation(frame.rotation);
+    Matrix4x4 desired=Matrix4x4.TRS(position,delta,Vector3.one)*linear*Matrix4x4.TRS(-restPoints[i],Quaternion.identity,Vector3.one);
+    Matrix4x4 bind=frame.worldToLocalMatrix*desired;
     for(int row=0;row<4;row++)for(int column=0;column<4;column++)if(!Settings.Finite(bind[row,column])||Math.Abs(bind[row,column])>1000000000000)
      throw new ArgumentException("The automatic rope skin has an invalid transform.");
     correctedBindposes[i]=bind;

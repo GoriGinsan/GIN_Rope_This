@@ -21,7 +21,7 @@ The tested KKS setup used **Unity 2019.4.9f1**, **BepInEx 5.4.19.0**, **KKSAPI 1
 
 The controls are the same as the KK version. Open Studio's **Option** button group, then click **Rope This**. The panel starts closed; click the same entry or press **F8** to toggle it.
 
-Existing supported chains use suggested A/B endpoints. **Option** inside the panel exposes manual bone selection. Static and single-bone items offer **Rope This(Vertical)** and **Rope This(Horizontal)**, with 3–30 intermediate bones and a default of 10.
+Existing supported chains use suggested A/B endpoints. **Option** inside the panel exposes manual bone selection. Static and single-bone items use one **Rope This** button, with automatic length-direction detection, 3–30 intermediate bones, and a default of 10. Depth and diagonal orientations are supported.
 
 Move the generated **GIN Rope A/B** handles directly, or attach them yourself using NodesConstraints. Use **Remove rope (restore item; keep handles)** to restore the original item.
 
