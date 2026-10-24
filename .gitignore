@@ -1,0 +1,10 @@
+/build/
+__pycache__/
+*.pyc
+*.dll
+*.exe
+*.pdb
+*.zip
+.vs/
+*.user
+*.suo
