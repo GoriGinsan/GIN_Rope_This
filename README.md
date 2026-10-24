@@ -72,7 +72,7 @@ Authored chains need 3–128 usable nodes. Ambiguous, branched, unreadable, or o
 
 ## For developers
 
-- [`src/`](src): complete plugin source for version **0.3.0**.
+- [`src/`](src): complete plugin source for version **1.0.0**.
 - [`assets/`](assets): button images and the original image generator.
 - [`tests/`](tests): standalone solver and scene-codec tests.
 - [`build.py`](build.py): local build and installation-ZIP creation.

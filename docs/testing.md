@@ -1,6 +1,6 @@
-# Tested scope — 0.3.0
+# Tested scope — 1.0.0
 
-The published DLL was checked in **Koikatsu CharaStudio / Unity 5.6.2f1**.
+Version **1.0.0** changes only the plugin version and startup version label from the previously tested build. The runtime behavior below was checked in **Koikatsu CharaStudio / Unity 5.6.2f1**. The 1.0.0 build was compiled again, its standalone assertions were rerun, and its executable method bodies were compared with the tested build, allowing only the startup version label to differ.
 
 - **104,427 standalone assertions** passed for the solver and scene codec.
 - **53 runtime checks** passed in an isolated Studio installation.
@@ -47,5 +47,5 @@ The native entry button used Unity EventSystem raycasts and pointer events in th
 SHA-256 of `GIN Rope This.dll`:
 
 ```text
-48330e2c2d11b47bed76d9ea0c909af81a6cc0f6c06d8c7de447f5a85714bd29
+6f5c6655710b60be127c4d79142cff008d1d6f9fca14748eba3cce23444353f4
 ```

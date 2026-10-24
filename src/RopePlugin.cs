@@ -12,7 +12,7 @@ using UnityEngine;
 using UnityEngine.UI;
 using UObj=UnityEngine.Object;
 namespace GINRope {
- [BepInPlugin(Guid,"GIN Rope This","0.3.0")]
+ [BepInPlugin(Guid,"GIN Rope This","1.0.0")]
  [BepInProcess("CharaStudio")]
  [BepInDependency("marco.kkapi",BepInDependency.DependencyFlags.HardDependency)]
  [BepInDependency("com.joan6694.illusionplugins.nodesconstraints",BepInDependency.DependencyFlags.SoftDependency)]
@@ -49,7 +49,7 @@ namespace GINRope {
    StudioSaveLoadApi.RegisterExtraBehaviour<SceneController>(Guid);
    Camera.onPreCull+=BeforeCamera;
    Timeline=new TimelineBridge();Constraints=new ConstraintBridge();
-   Logger.LogInfo("GIN Rope This 0.3.0 loaded (KK prototype).");
+   Logger.LogInfo("GIN Rope This 1.0.0 loaded (KK prototype).");
   }
   void Start(){StartCoroutine(AddToolbar());}
   IEnumerator AddToolbar(){
