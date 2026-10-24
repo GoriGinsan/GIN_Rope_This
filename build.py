@@ -7,7 +7,7 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parent
 SOURCES = ["RopeCore.cs", "RopePlugin.cs", "RopeIntegration.cs",
-           "RopeInterface.cs", "RopeSelectionUi.cs", "RopeAutoRig.cs", "RopeMeshSlices.cs"]
+           "RopeInterface.cs", "RopeSelectionUi.cs", "RopeAutoRig.cs", "RopeMeshSlices.cs", "RopeMotion.cs"]
 
 
 def run(arguments):
@@ -51,6 +51,10 @@ def main():
     run([compiler, "/nologo", "/utf8output", "/target:exe", "/out:" + str(tests),
          ROOT / "src/RopeCore.cs", ROOT / "tests/RopeCoreTests.cs"])
     run([tests])
+    motion_tests = binary / "RopeMotionTests.exe"
+    run([compiler, "/nologo", "/utf8output", "/target:exe", "/out:" + str(motion_tests),
+         ROOT / "src/RopeCore.cs", ROOT / "src/RopeMotion.cs", ROOT / "tests/RopeMotionTests.cs"])
+    run([motion_tests])
     mesh_tests = binary / "RopeMeshSlicesTests.exe"
     mesh_arguments = [compiler, "/nologo", "/utf8output", "/target:exe", "/out:" + str(mesh_tests)]
     if kks:

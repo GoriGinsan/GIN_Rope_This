@@ -15,7 +15,7 @@ The KK and KKS packages contain different DLLs with the same filename. Use the K
 - **KKS ExtensibleSaveFormat**, from [BepisPlugins](https://github.com/IllusionMods/BepisPlugins/releases).
 - Optional: the KKS **NodesConstraints** build from [HSPlugins](https://github.com/IllusionMods/HSPlugins/releases).
 
-The tested KKS setup used **Unity 2019.4.9f1**, **BepInEx 5.4.19.0**, **KKSAPI 1.33**, **Extended Save 18.2**, and **NodesConstraints 1.2.2**. These are the tested versions, not claims about the newest available dependencies.
+The 1.1.3 export checks used **Unity 2019.4.9f1**, **BepInEx 5.4.19.0**, **KKSAPI 1.43**, **Extended Save 21.1.2**, **Screenshot Manager 21.1.2**, **NodesConstraints 1.2.2**, and **Video Export 2.1.1**. Earlier 1.1.2 checks used KKSAPI 1.33 and Extended Save 18.2. These are tested combinations, not claims about the newest available dependencies.
 
 ## Controls
 

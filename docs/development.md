@@ -49,12 +49,14 @@ python build.py --target kks --tests-only
 | --- | --- |
 | `src/RopePlugin.cs` | Lifecycle, handles, physics application, and scene integration |
 | `src/RopeCore.cs` | Game-independent principal-axis fit, solver, settings, bake data, and scene codec |
+| `src/RopeMotion.cs` | Fixed simulation clock, sampled anchors, and separate interpolated rendering |
 | `src/RopeSelectionUi.cs` | Main controls, endpoint selection, and automatic rig controls |
 | `src/RopeAutoRig.cs` | Reversible mesh copies, generated bones, skinning, and renderer state |
 | `src/RopeMeshSlices.cs` | Bounded surface subdivision along the fitted rest line |
 | `src/RopeInterface.cs` | Endpoint suggestions, markers, and compatibility helpers |
 | `src/RopeIntegration.cs` | Optional integration and legacy saved-data support |
 | `tests/RopeCoreTests.cs` | Standalone solver and codec tests |
+| `tests/RopeMotionTests.cs` | Variable frame times, camera purity, interpolation, capture rates, and pause tests |
 | `tests/RopeMeshSlicesTests.cs` | Subdivision geometry, attributes, seams, and rejection tests |
 | `tests/UnityMeshTestStubs.cs` | Data-only Mesh substitutes used only by standalone subdivision tests |
 
@@ -67,6 +69,12 @@ Keep the GUID `local.kkworkshop.0a52b20541f5.gin-rope-this` for both targets whe
 The build embeds `assets/RopeThis.png` as `GINRope.Resources.RopeThis.png`. Only the plugin DLL is required after installation.
 
 ## Runtime checks
+
+Simulation runs at 120 Hz per rope. Frame time is accumulated without the old eight-step / 1/15-second clipping. Endpoints are interpolated at each crossed physics tick, accounting for the previous fractional remainder. Rendering interpolates the last two simulated states, then projects a separate display buffer onto the current handles. Camera callbacks never change solver positions, Verlet history, substep input samples, or accumulated time.
+
+Elapsed time comes from Unity's `Time.deltaTime`. Video Export 2.1.1 sets `Time.captureFramerate`, so this follows capture time even when image generation is slow. Do not use wall time, `Application.targetFrameRate`, or the exporter's recording counters. Do not derive elapsed time from the current `Time.timeScale`: Timeline can change that value after Unity has determined this frame's actual elapsed scene time.
+
+At most two seconds of capture time (240 physics steps) are processed in one frame. Ordinary live gaps over half a second and capture gaps over two seconds explicitly reset the rope rather than accumulating an unbounded backlog. Paused ropes consume no time; automatic teleport and scale resets are deferred while paused. Explicit reset actions remain available. Saved Timeline-synchronized ropes use the same capture-aware time bound.
 
 Automatic generation fits a principal axis to visible, posed mesh vertices in physical units after removing the item root's rigid rotation. Endpoints use projected vertex extrema; transverse bounds center the line. Nearly equal principal dimensions use an item-relative Y, X, Z preference, with tolerance for Unity float transform noise. Highly irregular geometry or uneven vertex density can make the fitted direction differ from a user's preferred direction.
 

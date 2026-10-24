@@ -112,35 +112,46 @@ namespace GINRope {
    Project(a,b,s,h);
    for(int i=0;i<P.Length;i++)if(!P[i].Finite){Reset(a,b,s);return;}
   }
-  // Reconciliation never advances time: camera passes cannot multiply simulation speed.
+  // For explicit simulation/bake reconciliation only. Rendering uses a private copy.
   public void Reconcile(V3 a,V3 b,Settings s){Project(a,b,s,1.0/120);}
   void Project(V3 a,V3 b,Settings s,double h){
+   Project(P,a,b,s,h,lambdas);
+   previous[0]=a;previous[P.Length-1]=b;
+  }
+  // The render caller owns both arrays: neither positions nor velocity history
+  // in this solver are touched by additional cameras or repeated render passes.
+  internal void ProjectCopy(V3[] points,V3 a,V3 b,Settings s,double[] scratch){
+   if(points==null||points.Length!=P.Length||Object.ReferenceEquals(points,P)||scratch==null||scratch.Length!=lambdas.Length||Object.ReferenceEquals(scratch,lambdas))throw new ArgumentException("Invalid display projection buffers.");
+   s.Validate();if(!a.Finite||!b.Finite)throw new ArgumentException("Non-finite anchor.");
+   Project(points,a,b,s,1.0/120,scratch);
+  }
+  void Project(V3[] points,V3 a,V3 b,Settings s,double h,double[] scratch){
    double scale=Math.Max(s.Length,(b-a).Length/total*1.00001);
-   Array.Clear(lambdas,0,lambdas.Length);
+   Array.Clear(scratch,0,scratch.Length);
    for(int pass=0;pass<s.Iterations;pass++){
-    P[0]=a; P[P.Length-1]=b;
+    points[0]=a;points[points.Length-1]=b;
     for(int k=0;k<lengths.Length;k++){
      int i=(pass%2==0)?k:lengths.Length-1-k;
-     Distance(i,i+1,lengths[i]*scale,0,ref lambdas[i]);
+     Distance(points,i,i+1,lengths[i]*scale,0,ref scratch[i]);
     }
     if(s.Bend>0){
      double alpha=(1-s.Bend)*0.01/(h*h);
      for(int i=0;i<P.Length-2;i++){
       double lambda=0;
-      Distance(i,i+2,(lengths[i]+lengths[i+1])*scale,alpha,ref lambda);
+      Distance(points,i,i+2,(lengths[i]+lengths[i+1])*scale,alpha,ref lambda);
      }
     }
    }
-   P[0]=a;P[P.Length-1]=b; previous[0]=a;previous[P.Length-1]=b;
+   points[0]=a;points[points.Length-1]=b;
   }
-  void Distance(int i,int j,double rest,double alpha,ref double lambda){
-   V3 delta=P[j]-P[i]; double distance=delta.Length;
+  static void Distance(V3[] points,int i,int j,double rest,double alpha,ref double lambda){
+   V3 delta=points[j]-points[i]; double distance=delta.Length;
    if(distance<1e-10)return;
-   double wi=(i==0||i==P.Length-1)?0:1,wj=(j==0||j==P.Length-1)?0:1;
+   double wi=(i==0||i==points.Length-1)?0:1,wj=(j==0||j==points.Length-1)?0:1;
    if(wi+wj==0)return;
    double dl=(-(distance-rest)-alpha*lambda)/(wi+wj+alpha);lambda+=dl;
    V3 correction=delta*(dl/distance);
-   P[i]=P[i]-correction*wi;P[j]=P[j]+correction*wj;
+   points[i]=points[i]-correction*wi;points[j]=points[j]+correction*wj;
   }
  }
  public sealed class Record {

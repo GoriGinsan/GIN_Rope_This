@@ -12,7 +12,7 @@ using UnityEngine;
 using UnityEngine.UI;
 using UObj=UnityEngine.Object;
 namespace GINRope {
- [BepInPlugin(Guid,"GIN Rope This","1.1.2")]
+ [BepInPlugin(Guid,"GIN Rope This","1.1.3")]
  [BepInProcess("CharaStudio")]
  [BepInDependency(KKAPI.KoikatuAPI.GUID,BepInDependency.DependencyFlags.HardDependency)]
  [BepInDependency("com.joan6694.illusionplugins.nodesconstraints",BepInDependency.DependencyFlags.SoftDependency)]
@@ -34,7 +34,6 @@ namespace GINRope {
   Rope active;
   KKAPI.Studio.UI.ToolbarButton toolbar;
   Texture2D toolbarTexture;
-  float accumulator;
   int simulatedFrame=-1;
   readonly List<PendingLoad> pending=new List<PendingLoad>();
   int loadGeneration;
@@ -50,9 +49,9 @@ namespace GINRope {
    Camera.onPreCull+=BeforeCamera;
    Timeline=new TimelineBridge();Constraints=new ConstraintBridge();
 #if KKS
-   Logger.LogInfo("GIN Rope This 1.1.2 loaded (KKS).");
+   Logger.LogInfo("GIN Rope This 1.1.3 loaded (KKS).");
 #else
-   Logger.LogInfo("GIN Rope This 1.1.2 loaded (KK).");
+   Logger.LogInfo("GIN Rope This 1.1.3 loaded (KK).");
 #endif
   }
   void Start(){StartCoroutine(AddToolbar());}
@@ -90,19 +89,25 @@ namespace GINRope {
    if(StudioSaveLoadApi.LoadInProgress||StudioSaveLoadApi.ImportInProgress)return;
    if(Baking!=null)return;
    bool integrate=advance&&simulatedFrame!=Time.frameCount;
-   int steps=0;
+   double elapsed=0;
    if(integrate){
-    simulatedFrame=Time.frameCount;float dt=Time.deltaTime;
-    if(dt>0.2f){foreach(Rope rope in Ropes)rope.NeedsReset=true;accumulator=0;}
-    else accumulator+=Mathf.Clamp(dt,0,0.066667f);
-    steps=Math.Min(8,(int)(accumulator/(1f/120f)));accumulator-=steps*(1f/120f);
+    simulatedFrame=Time.frameCount;
+    // Unity deltaTime already follows Video Export's captureFramerate, including
+    // prewarm and the scale sampled for this frame. A Timeline track can change
+    // timeScale later, so deriving elapsed time from its current value is wrong.
+    // Wall time and the exporter's adaptive targetFrameRate do not measure clip time.
+    int captureRate=Time.captureFramerate;
+    elapsed=Time.deltaTime;
+    if(!Settings.Finite(elapsed)||elapsed<0||elapsed>(captureRate>0?2.0:0.5)){
+     foreach(Rope rope in Ropes)rope.NeedsReset=true;elapsed=0;
+    }
    }
    for(int i=Ropes.Count-1;i>=0;i--){
     Rope rope=Ropes[i];
     try {
      if(!rope.Valid){rope.Restore();Ropes.RemoveAt(i);if(active==rope)active=null;continue;}
      if(rope.UseBake&&rope.Bake!=null)rope.PlayBake(Timeline.Ready?Timeline.Time:rope.BakePreviewTime);
-     else if(rope.TimelineSync&&Timeline.Ready)rope.TickTimeline(Timeline.Time,integrate);else rope.Tick(steps);
+     else if(rope.TimelineSync&&Timeline.Ready)rope.TickTimeline(Timeline.Time,integrate);else rope.TickFrame(elapsed,integrate);
     }catch(Exception ex){rope.StopAfterError();status="Rope stopped: "+ex.Message;Logger.LogError(ex);}
    }
   }
@@ -271,7 +276,7 @@ namespace GINRope {
   public void ClearRopes(){
    if(Baking!=null){Baking.Cancel(false);Baking=null;}
    pickingRope=null;pickingTarget=null;
-   loadGeneration++;pending.Clear();foreach(Rope rope in Ropes)rope.Restore();Ropes.Clear();active=null;choosing=null;accumulator=0;
+   loadGeneration++;pending.Clear();foreach(Rope rope in Ropes)rope.Restore();Ropes.Clear();active=null;choosing=null;simulatedFrame=-1;
   }
   public void Queue(List<Record> records,ReadOnlyDictionary<int,ObjectCtrlInfo> loaded){
    Dictionary<int,ObjectCtrlInfo> map=new Dictionary<int,ObjectCtrlInfo>();foreach(KeyValuePair<int,ObjectCtrlInfo> p in loaded)map[p.Key]=p.Value;
@@ -334,6 +339,8 @@ namespace GINRope {
   readonly List<Behaviour> drivers=new List<Behaviour>();
   readonly List<bool> enabledStates=new List<bool>();
   Solver solver;
+  RopeMotion motion;
+  V3[] rendered;
   V3 lastA,lastB;
   Vector3 lastScale;
   public bool Valid{get{
@@ -357,7 +364,7 @@ namespace GINRope {
      points[i]=V(bones[i].position);restRotation[i]=Quaternion.Inverse(root.rotation)*bones[i].rotation;
      if(i<bones.Length-1)restDirection[i]=root.InverseTransformDirection(bones[i+1].position-bones[i].position);
     }
-    solver=new Solver(points);
+    solver=new Solver(points);motion=new RopeMotion(solver);rendered=new V3[points.Length];
     HashSet<Transform> foreignItems=new HashSet<Transform>();
     foreach(ObjectCtrlInfo info in Singleton<Studio.Studio>.Instance.dicObjectCtrl.Values){OCIItem other=info as OCIItem;if(other!=null&&other!=item&&other.objectItem!=null&&other.objectItem.transform.IsChildOf(root))foreignItems.Add(other.objectItem.transform);}
     foreach(Behaviour behaviour in item.objectItem.GetComponentsInChildren<Behaviour>(true)){
@@ -381,29 +388,43 @@ namespace GINRope {
    if(lastTimeline<0||delta<-.000001||delta>.2){NeedsReset=true;timelineAccumulator=0;lastTimeline=time;return 0;}
    lastTimeline=time;timelineAccumulator+=Math.Max(0,delta);int steps=Math.Min(24,(int)(timelineAccumulator*120+0.0000001));timelineAccumulator-=steps/120.0;return steps;
   }
-  public void ResetTimelineClock(){lastTimeline=-1;timelineAccumulator=0;}
-  public void Tick(int steps){TickCore(steps,1.0/120,false);}
-  public void TickTimeline(double time,bool advance){TickCore(TimelineSteps(time,advance),1.0/120,true);}
-  public void BakeStep(double h){TickCore(h>0?1:0,h>0?h:1.0/120,false);}
-  void TickCore(int steps,double h,bool freezeWithoutTime){
-   if(Faulted){if(Settings.Paused||!NeedsReset)return;Faulted=false;}
+  public void ResetTimelineClock(){lastTimeline=-1;timelineAccumulator=0;if(motion!=null)motion.ClearClock(lastA,lastB);}
+  public void Tick(int steps){if(steps<0||steps>240)throw new ArgumentException("Invalid rope step count.");TickFrame(steps/120.0,true);}
+  public void TickTimeline(double time,bool advance){
+   if(!advance){TickFrame(0,false);return;}
+   if(!GINRope.Settings.Finite(time))throw new ArgumentException("Invalid Timeline time.");
+   double elapsed=time-lastTimeline;
+   double limit=Time.captureFramerate>0?2.0:0.5;
+   if(lastTimeline<0||elapsed<-.000001||elapsed>limit+.000001){NeedsReset=true;elapsed=0;}
+   lastTimeline=time;TickFrame(Math.Max(0,Math.Min(2,elapsed)),true);
+  }
+  public void BakeStep(double h){
+   V3 a,b;if(!Prepare(true,out a,out b))return;
+   if(!Settings.Paused){if(h>0)solver.Step(h,a,b,Settings);solver.Reconcile(a,b,Settings);}
+   motion.ClearClock(a,b);lastA=a;lastB=b;ApplyPoints(solver.P);
+  }
+  bool Prepare(bool advance,out V3 a,out V3 b){
+   a=b=new V3();
+   if(Faulted){if(Settings.Paused||!NeedsReset)return false;Faulted=false;}
    Settings.Validate();
    Plugin.CheckVector(A.objectItem.transform.position,"Anchor A");Plugin.CheckVector(B.objectItem.transform.position,"Anchor B");
    Plugin.CheckVector(Item.objectItem.transform.position,"Item");Plugin.CheckRotation(Item.objectItem.transform.rotation);
-   V3 a=V(A.objectItem.transform.position),b=V(B.objectItem.transform.position);
+   a=V(A.objectItem.transform.position);b=V(B.objectItem.transform.position);
    if(!a.Finite||!b.Finite)throw new InvalidOperationException("Invalid anchor position.");
    Vector3 scale=Item.objectItem.transform.lossyScale;
    Plugin.CheckScale(scale);
-   if((scale-lastScale).sqrMagnitude>0.000001f){RestoreBones();V3[] points=new V3[Bones.Length];for(int i=0;i<Bones.Length;i++)points[i]=V(Bones[i].position);solver=new Solver(points);NeedsReset=true;lastScale=scale;}
+   if(advance&&!Settings.Paused&&(scale-lastScale).sqrMagnitude>0.000001f){RestoreBones();V3[] points=new V3[Bones.Length];for(int i=0;i<Bones.Length;i++)points[i]=V(Bones[i].position);solver=new Solver(points);motion=new RopeMotion(solver);NeedsReset=true;lastScale=scale;}
    double jump=Math.Max((a-lastA).Length,(b-lastB).Length);
-   if(jump>Math.Max(1,solver.AuthoredLength*0.75))NeedsReset=true;
-   if(NeedsReset){solver.Reset(a,b,Settings);NeedsReset=false;}
-   if(!Settings.Paused){
-    for(int i=0;i<steps;i++)solver.Step(h,a,b,Settings);
-    if(!freezeWithoutTime||steps>0||(a-lastA).Length>.0000001||(b-lastB).Length>.0000001)solver.Reconcile(a,b,Settings);
-   }
-   lastA=a;lastB=b;
-   ApplyPoints(solver.P);
+   if(advance&&!Settings.Paused&&jump>Math.Max(1,solver.AuthoredLength*0.75))NeedsReset=true;
+   if(advance&&NeedsReset){motion.Reset(a,b,Settings);NeedsReset=false;}
+   return true;
+  }
+  public void TickFrame(double elapsed,bool advance){
+   V3 a,b;if(!Prepare(advance,out a,out b))return;
+   if(advance){motion.Advance(elapsed,a,b,Settings);lastA=a;lastB=b;}
+   // Camera passes refresh transforms from a projected render copy. They cannot
+   // change the simulation, velocity history, clock, or substep anchor samples.
+   motion.Render(a,b,Settings,rendered);ApplyPoints(rendered);
   }
   void ApplyPoints(V3[] points){
    Transform root=Item.objectItem.transform;Quaternion last=Quaternion.identity;

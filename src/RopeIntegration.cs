@@ -16,6 +16,7 @@ namespace GINRope {
    if(type==null)return;
    self=type.GetField("_self",Flags);time=type.GetProperty("playbackTime",Flags);duration=type.GetProperty("duration",Flags);playing=type.GetProperty("isPlaying",Flags);
    seek=type.GetMethod("Seek",Flags,null,new Type[]{typeof(float)},null);pause=type.GetMethod("Pause",Flags);play=type.GetMethod("Play",Flags);interpolate=type.GetMethod("Interpolate",Flags,null,new Type[]{typeof(bool)},null);
+   if(seek==null)seek=type.GetMethod("SeekPlaybackTime",Flags,null,new Type[]{typeof(float)},null);
    if(self==null||time==null||duration==null||playing==null||seek==null||pause==null||play==null||interpolate==null)type=null;
   }
   public double Time{get{return Convert.ToDouble(time.GetValue(null,null));}}
@@ -24,7 +25,7 @@ namespace GINRope {
   public void SetPlaying(bool value){if(Playing!=value)(value?play:pause).Invoke(null,null);}
   public void Evaluate(double value){
    if(!Ready||!Settings.Finite(value)||value<0||value>Duration+0.001)throw new InvalidOperationException("Timeline time is unavailable or outside its duration.");
-   seek.Invoke(null,new object[]{(float)value});object instance=self.GetValue(null);
+   object instance=self.GetValue(null);seek.Invoke(seek.IsStatic?null:instance,new object[]{(float)value});
    // Seek may return early at the current time. Always evaluate both passes.
    interpolate.Invoke(instance,new object[]{true});interpolate.Invoke(instance,new object[]{false});
    foreach(ObjectCtrlInfo info in Singleton<Studio.Studio>.Instance.dicObjectCtrl.Values)if(info.guideObject!=null)info.guideObject.ForceUpdate();

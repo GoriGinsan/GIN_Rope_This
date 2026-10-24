@@ -2,7 +2,7 @@
 
 Turn Studio items into movable ropes in **Koikatsu (KK)** and **Koikatsu Sunshine (KKS) CharaStudio**.
 
-**Version 1.1.2** adds automatic length-direction detection and fixes bending for sparse meshes, including cylinders stretched along different axes before conversion.
+**Version 1.1.3** stabilizes rope timing at varying frame rates and during Video Export capture. No additional export settings are required.
 
 ## Download
 
@@ -74,13 +74,19 @@ After creation, the panel shows length, gravity, damping, bend stiffness, qualit
 
 Rope settings and generated-rig information are saved with the Studio scene. Scene duplication and restoration are supported. Use **Remove rope (restore item; keep handles)** to restore the item while keeping its two Studio handles.
 
+### Video Export
+
+Use Video Export normally. Rope physics follows Unity's scene clock, which Video Export fixes to the requested capture FPS. A slow image capture or extra camera render does not advance the rope again. Intermediate simulation steps also follow the handles' movement between frames, and the visible rope is interpolated between physics steps.
+
+No export-specific button or manual FPS setting is required in Rope This. Time scale and pause remain effective. This addresses timing-induced shaking; intentional rope motion and changes in the animated attachment targets still appear in the result.
+
 Authored chains need 3–128 usable nodes. Ambiguous, branched, unreadable, or otherwise unsupported geometry can be refused with a message. Collision handling is not supported. KKS automatic conversion safely refuses meshes with more than four skin influences per vertex. See the [tested scope and limitations](docs/testing.md).
 
 ## For developers
 
-- [`src/`](src): complete shared KK/KKS plugin source for **1.1.2**.
+- [`src/`](src): complete shared KK/KKS plugin source for **1.1.3**.
 - [`assets/`](assets): button images and the original image generator.
-- [`tests/`](tests): standalone solver, scene-codec, and mesh-subdivision tests.
+- [`tests/`](tests): standalone solver, scene-codec, motion-clock, and mesh-subdivision tests.
 - [`build.py`](build.py): local build and installation-ZIP creation.
 - [Development guide](docs/development.md): dependencies, build commands, and code map.
 
